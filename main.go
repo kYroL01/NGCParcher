@@ -4,28 +4,52 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/pcap"
 )
 
-func main() {
+const version = "1.0.0"
+
+// Options struct to hold the command-line options
+type Options struct {
+	Interface string
+	PcapFile  string
+}
+
+func parseOptions() Options {
+	// Define flags
 	interfaceName := flag.String("interface", "", "Name of the interface to capture packets from")
 	pcapFile := flag.String("pcap", "", "Path to the pcap file to read")
+
+	// Parse the flags
 	flag.Parse()
 
+	// Check if at least one option is provided
 	if *interfaceName == "" && *pcapFile == "" {
-		log.Fatal("You must specify either a network interface or a pcap file")
+		fmt.Println("Usage:")
+		flag.PrintDefaults()
+		os.Exit(1)
 	}
 
-	if *interfaceName != "" {
-		readLiveTraffic(*interfaceName)
-	} else {
-		readPcapFile(*pcapFile)
+	return Options{
+		Interface: *interfaceName,
+		PcapFile:  *pcapFile,
 	}
 }
 
-// readLiveTraffic captures live traffic from the specified network interface
+func main() {
+	// Parse options
+	opts := parseOptions()
+
+	if opts.Interface != "" {
+		readLiveTraffic(opts.Interface)
+	} else {
+		readPcapFile(opts.PcapFile)
+	}
+}
+
 func readLiveTraffic(interfaceName string) {
 	handle, err := pcap.OpenLive(interfaceName, 1600, true, pcap.BlockForever)
 	if err != nil {
@@ -39,7 +63,6 @@ func readLiveTraffic(interfaceName string) {
 	}
 }
 
-// readPcapFile reads packets from a pcap file
 func readPcapFile(filename string) {
 	handle, err := pcap.OpenOffline(filename)
 	if err != nil {
