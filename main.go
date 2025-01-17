@@ -16,13 +16,15 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"log"
 	"os"
 
+	"ngcp_archer/parser"
+
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/pcap"
+	"github.com/spf13/pflag"
 )
 
 const version = "1.0.0"
@@ -48,13 +50,14 @@ func listAvailableDevices() {
 
 // parseOptions parses the command-line options
 func parseOptions() Options {
+
 	// Define flags
-	interfaceName := flag.String("interface", "", "Name of the interface to capture packets from")
-	pcapFile := flag.String("pcap", "", "Path to the pcap file to read")
-	listDevices := flag.Bool("list", false, "List available devices")
+	interfaceName := pflag.StringP("interface", "i", "", "Name of the interface to capture packets from")
+	pcapFile := pflag.StringP("pcap", "p", "", "Path to the pcap file to read")
+	listDevices := pflag.BoolP("list", "l", false, "List available devices")
 
 	// Parse flags
-	flag.Parse()
+	pflag.Parse()
 
 	// Check if the listDevices flag is provided
 	if *listDevices {
@@ -65,7 +68,7 @@ func parseOptions() Options {
 	// Check if at least one option is provided for interface or pcap file
 	if *interfaceName == "" && *pcapFile == "" {
 		fmt.Println("Usage:")
-		flag.PrintDefaults()
+		pflag.PrintDefaults()
 		os.Exit(0)
 	}
 
@@ -90,6 +93,9 @@ func main() {
 
 // readLiveTraffic reads live traffic from the specified interface
 func readLiveTraffic(interfaceName string) {
+
+	var ngcpData *parser.NGCPStruct
+
 	handle, err := pcap.OpenLive(interfaceName, 1600, true, pcap.BlockForever)
 	if err != nil {
 		log.Fatalf("Error opening live capture: %v", err)
@@ -98,12 +104,20 @@ func readLiveTraffic(interfaceName string) {
 
 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
 	for packet := range packetSource.Packets() {
-		fmt.Println(packet)
+		ngcpData, err = parser.ParseNGCP(packet) // Call the custom protocol parser
+		if err != nil {
+			log.Printf("Error parsing NGCP packet: %v", err)
+			continue
+		}
+		fmt.Printf("Parsed NGCP Data: %+v\n", ngcpData)
 	}
 }
 
 // readPcapFile reads packets from a pcap file
 func readPcapFile(filename string) {
+
+	var ngcpData *parser.NGCPStruct
+
 	handle, err := pcap.OpenOffline(filename)
 	if err != nil {
 		log.Fatalf("Error opening pcap file: %v", err)
@@ -111,7 +125,14 @@ func readPcapFile(filename string) {
 	defer handle.Close()
 
 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
+	packetSource.DecodeOptions.Lazy = false  // Ensure all layers are decoded
+	packetSource.DecodeOptions.NoCopy = true // Do not copy packet data
 	for packet := range packetSource.Packets() {
-		fmt.Println(packet)
+		ngcpData, err = parser.ParseNGCP(packet) // Call the custom protocol parser
+		if err != nil {
+			log.Printf("Error parsing NGCP packet: %v", err)
+			continue
+		}
+		fmt.Printf("Parsed NGCP Data: %+v\n", ngcpData)
 	}
 }
