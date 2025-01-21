@@ -78,6 +78,8 @@ func parseOptions() Options {
 	}
 }
 
+var msg = &parser.Msg{}
+
 func main() {
 
 	fmt.Printf(">>--- WELCOME to ngcp_archer %s--->\n", version)
@@ -104,7 +106,7 @@ func readLiveTraffic(interfaceName string) {
 
 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
 	for packet := range packetSource.Packets() {
-		ngcpData, err = parser.ParseNGCP(packet) // Call the custom protocol parser
+		ngcpData, err = parser.ParseNGCP(packet, msg) // Call the custom protocol parser
 		if err != nil {
 			log.Printf("Error parsing NGCP packet: %v", err)
 			continue
@@ -128,11 +130,13 @@ func readPcapFile(filename string) {
 	packetSource.DecodeOptions.Lazy = false  // Ensure all layers are decoded
 	packetSource.DecodeOptions.NoCopy = true // Do not copy packet data
 	for packet := range packetSource.Packets() {
-		ngcpData, err = parser.ParseNGCP(packet) // Call the custom protocol parser
+		ngcpData, err = parser.ParseNGCP(packet, msg) // Call the custom protocol parser
 		if err != nil {
 			log.Printf("Error parsing NGCP packet: %v", err)
 			continue
 		}
-		fmt.Printf("Parsed NGCP Data: %+v\n", ngcpData)
+		fmt.Printf("Parsed NGCP Data:\n")
+		fmt.Printf("Type: %s\n, Comm: %s\n, Sdp: %s\n, Cookie: %s\n, CallID: %s\n, Anumber: %s\n, Bnumber: %s\n, FromTAG: %s\n, ToTAG: %s\n, SipIP: %s\n, ReceiveFrom: %s\n",
+			ngcpData.Type, ngcpData.Comm, ngcpData.Sdp, ngcpData.Cookie, ngcpData.CallID, ngcpData.Anumber, ngcpData.Bnumber, ngcpData.FromTAG, ngcpData.ToTAG, ngcpData.SipIP, ngcpData.ReceiveFrom)
 	}
 }
