@@ -34,7 +34,6 @@ const (
 	OFFER  = iota // 0
 	ANSWER        // 1
 	DELETE        // 2
-	PING          // 3
 )
 
 func strNstr(haystack, needle string, maxLen int) string {
@@ -131,13 +130,13 @@ func processNGCPPayload(payload string, ngcpData *NGCPStruct, msg *Msg) error {
 
 	var (
 		//sdp         string = ""
-		//cookie      string = ""
-		//callID      string = ""
+		cookie  string = ""
+		callID  string = ""
 		aNumber string = ""
 		bNumber string = ""
 		fromTag string = ""
-		//toTag       string = ""
-		sipIP string = ""
+		toTag   string = ""
+		sipIP   string = ""
 		//receiveFrom string = ""
 		skipANumber bool = false
 		skipBNumber bool = false
@@ -155,7 +154,7 @@ func processNGCPPayload(payload string, ngcpData *NGCPStruct, msg *Msg) error {
 
 		// Check command type
 		if strings.Contains(payload, "offer") {
-			// Update flag for offer
+			// Update flag for OFFER
 			msg.NGCPComm = OFFER
 			ngcpData.Comm = "OFFER"
 
@@ -261,17 +260,99 @@ func processNGCPPayload(payload string, ngcpData *NGCPStruct, msg *Msg) error {
 			}
 
 		} else if strings.Contains(payload, "answer") {
+
+			// Update flag for ANSWER
 			msg.NGCPComm = ANSWER
 			ngcpData.Comm = "ANSWER"
 
+			/** FROM TAG **/
+			fromTag = strNstr(payload, "from-tag", len(payload))
+			if fromTag == "" {
+				log.Println("error in check NGCP: no FROM-TAG found")
+				return errors.New("no FROM-TAG found")
+			}
+			fromTag = fromTag[8:]
+			colonIdx := strings.Index(fromTag, ":")
+			if colonIdx == -1 {
+				log.Println("error in check NGCP: malformed FROM-TAG")
+				return errors.New("malformed FROM-TAG")
+			}
+			fromTagLen, err := strconv.Atoi(fromTag[:colonIdx])
+			if err != nil {
+				return errors.New("invalid FROM-TAG length")
+			}
+			// Update NGCPStruct
+			ngcpData.FromTAG = fromTag[colonIdx+1 : colonIdx+1+fromTagLen]
+			// Update SIP struct in Msg
+			msg.SIP.FromTag = fromTag[colonIdx+1 : colonIdx+1+fromTagLen]
+			msg.SIP.HasFromTag = true
+
+			/** TO TAG **/
+			toTag = strNstr(payload, "to-tag", len(payload))
+			if toTag == "" {
+				log.Println("error in check NGCP: no TO-TAG found")
+				return errors.New("no TO-TAG found")
+			}
+			toTag = toTag[6:]
+			colonIdx = strings.Index(toTag, ":")
+			if colonIdx == -1 {
+				log.Println("error in check NGCP: malformed TO-TAG")
+				return errors.New("malformed TO-TAG")
+			}
+			toTagLen, err := strconv.Atoi(toTag[:colonIdx])
+			if err != nil {
+				return errors.New("invalid TO-TAG length")
+			}
+			// Update NGCPStruct
+			ngcpData.ToTAG = toTag[colonIdx+1 : colonIdx+1+toTagLen]
+			// Update SIP struct in Msg
+			msg.SIP.ToTag = toTag[colonIdx+1 : colonIdx+1+toTagLen]
+			msg.SIP.HasToTag = true
+
 		} else if strings.Contains(payload, "delete") {
+			// Update flag for DELETE
 			msg.NGCPComm = DELETE
-		} else if strings.Contains(payload, "ping") {
-			msg.NGCPComm = PING
+			ngcpData.Comm = "DELETE"
+			log.Println("DELETE command found")
 		} else {
 			log.Println("Unsupported command type in NGCP payload")
 			return errors.New("unsupported command type")
 		}
+
+		/** Checking and parsing MAGIC COOKIE and CALL ID **/
+
+		/** COOKIE **/
+		endCookie := strings.Index(payload, " ")
+		if endCookie == -1 {
+			return errors.New("no space found in payload for cookie extraction")
+		}
+		cookie = payload[:endCookie]
+
+		// Update NGCPStruct
+		ngcpData.Cookie = cookie
+		// Update SIP struct in Msg
+		msg.SIP.NgcpCookie = cookie
+
+		/** CALL ID **/
+		callID = strNstr(payload, "call-id", len(payload))
+		if callID == "" {
+			log.Println("error in check NGCP: no CALL-ID found")
+			return errors.New("no CALL-ID found")
+		}
+		callID = callID[7:]
+		colonIdx := strings.Index(callID, ":")
+		if colonIdx == -1 {
+			log.Println("error in check NGCP: malformed CALL-ID")
+			return errors.New("malformed CALL-ID")
+		}
+		callIDLen, err := strconv.Atoi(callID[:colonIdx])
+		if err != nil {
+			return errors.New("invalid CALL-ID length")
+		}
+		// Update NGCPStruct
+		ngcpData.CallID = callID[colonIdx+1 : colonIdx+1+callIDLen]
+		// Update SIP struct in Msg
+		msg.SIP.CallID = callID[colonIdx+1 : colonIdx+1+callIDLen]
 
 		return nil
 	}
