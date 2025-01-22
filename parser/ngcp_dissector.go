@@ -129,354 +129,330 @@ func processNGCPPayload(payload string, ngcpData *NGCPStruct, msg *Msg) error {
 		return errors.New("empty payload")
 	}
 
-	var (
-		sdp          string = ""
-		cookie       string = ""
-		callID       string = ""
-		aNumber      string = ""
-		bNumber      string = ""
-		fromTag      string = ""
-		toTag        string = ""
-		sipIP        string = ""
-		receivedFrom string = ""
-		skipANumber  bool   = false
-		skipBNumber  bool   = false
-		skipSipIP    bool   = false
-	)
-
-	/**
-	 ** This is a REQUEST (0)
-	 **/
 	if strings.Contains(payload, "command") {
+		return processRequestPayload(payload, ngcpData, msg)
+	}
 
-		// Update flag for request
-		msg.NGCPType = REQUEST
-		ngcpData.Type = "REQUEST"
+	if strings.Contains(payload, "result") {
+		return processResponsePayload(payload, ngcpData, msg)
+	}
 
-		/** Check command type OFFER, ANSWER, DELETE **/
+	log.Println("Unsupported NGCP payload type")
+	return errors.New("unsupported NGCP payload type")
+}
 
-		if strings.Contains(payload, "offer") {
-			// Update flag for OFFER
-			msg.NGCPComm = OFFER
-			ngcpData.Comm = "OFFER"
+// processRequestPayload handles REQUEST-type NGCP payloads
+func processRequestPayload(payload string, ngcpData *NGCPStruct, msg *Msg) error {
+	msg.NGCPType = REQUEST
+	ngcpData.Type = "REQUEST"
 
-			/** FROM TAG **/
-			fromTag = strNstr(payload, "from-tag", len(payload))
-			if fromTag == "" {
-				log.Println("error in check NGCP: no FROM-TAG found")
-				return errors.New("no FROM-TAG found")
-			}
-			fromTag = fromTag[8:]
-			colonIdx := strings.Index(fromTag, ":")
-			if colonIdx == -1 {
-				log.Println("error in check NGCP: malformed FROM-TAG")
-				return errors.New("malformed FROM-TAG")
-			}
-			fromTagLen, err := strconv.Atoi(fromTag[:colonIdx])
-			if err != nil {
-				return errors.New("invalid FROM-TAG length")
-			}
-			// Update NGCPStruct
-			ngcpData.FromTAG = fromTag[colonIdx+1 : colonIdx+1+fromTagLen]
-			// Update SIP struct in Msg
-			msg.SIP.FromTag = fromTag[colonIdx+1 : colonIdx+1+fromTagLen]
-			msg.SIP.HasFromTag = true
+	if strings.Contains(payload, "offer") {
+		// Set command to OFFER
+		msg.NGCPComm = OFFER
+		ngcpData.Comm = "OFFER"
 
-			/*
-			* Check if Anumber and Bnumber are present
-			* if Anumber is present then Bnumber is also present, and viceversa
-			* if one of the two is present but not the other, then it's an error
-			 */
-			if !strings.Contains(payload, "anumber") {
-				skipANumber = true
-				if !strings.Contains(payload, "bnumber") {
-					skipBNumber = true
-				}
-			}
-			if skipANumber && !skipBNumber {
-				log.Println("error in check NGCP: missing ANUMBER but BNUMBER is present")
-				return errors.New("missing ANUMBER but BNUMBER is present")
-			} else if !skipANumber && skipBNumber {
-				log.Println("error in check NGCP: missing BNUMBER but ANUMBER is present")
-				return errors.New("missing BNUMBER but ANUMBER is present")
-			}
-
-			/** ANumber **/
-			if !skipANumber {
-				aNumber = strNstr(payload, "anumber", len(payload))
-				aNumber = aNumber[7:]
-				colonIdx = strings.Index(aNumber, ":")
-				if colonIdx == -1 {
-					log.Println("error in check NGCP: malformed ANUMBER")
-					return errors.New("malformed ANUMBER")
-				}
-				aNumberLen, err := strconv.Atoi(aNumber[:colonIdx])
-				if err != nil {
-					return errors.New("invalid ANUMBER length")
-				}
-				// Update NGCPStruct
-				ngcpData.Anumber = aNumber[colonIdx+1 : colonIdx+1+aNumberLen]
-				// Update SIP struct in Msg
-				msg.SIP.FromUser = aNumber[colonIdx+1 : colonIdx+1+aNumberLen]
-			}
-			/** BNumber **/
-			if !skipBNumber {
-				bNumber = strNstr(payload, "bnumber", len(payload))
-				bNumber = bNumber[7:]
-				colonIdx = strings.Index(bNumber, ":")
-				if colonIdx == -1 {
-					log.Println("error in check NGCP: malformed ANUMBER")
-					return errors.New("malformed BNUMBER")
-				}
-				bNumberLen, err := strconv.Atoi(bNumber[:colonIdx])
-				if err != nil {
-					return errors.New("invalid BNUMBER length")
-				}
-				// Update NGCPStruct
-				ngcpData.Bnumber = bNumber[colonIdx+1 : colonIdx+1+bNumberLen]
-				// Update SIP struct in Msg
-				msg.SIP.FromUser = bNumber[colonIdx+1 : colonIdx+1+bNumberLen]
-			}
-
-			/* Check if SIP-IP is present */
-			if !strings.Contains(payload, "sipip") {
-				skipSipIP = true
-			}
-			/** SIP-IP **/
-			if !skipSipIP {
-				sipIP = strNstr(payload, "sipip", len(payload))
-				sipIP = sipIP[5:]
-				colonIdx = strings.Index(sipIP, ":")
-				if colonIdx == -1 {
-					log.Println("error in check NGCP: malformed SIP-IP")
-					return errors.New("malformed SIP-IP")
-				}
-				sipIPLen, err := strconv.Atoi(sipIP[:colonIdx])
-				if err != nil {
-					return errors.New("invalid SIP-IP length")
-				}
-				// Update NGCPStruct
-				ngcpData.SipIP = sipIP[colonIdx+1 : colonIdx+1+sipIPLen]
-				// Update SIP struct in Msg
-				msg.SIP.NgcpSipip = sipIP[colonIdx+1 : colonIdx+1+sipIPLen]
-			}
-
-		} else if strings.Contains(payload, "answer") {
-
-			// Update flag for ANSWER
-			msg.NGCPComm = ANSWER
-			ngcpData.Comm = "ANSWER"
-
-			/** FROM TAG **/
-			fromTag = strNstr(payload, "from-tag", len(payload))
-			if fromTag == "" {
-				log.Println("error in check NGCP: no FROM-TAG found")
-				return errors.New("no FROM-TAG found")
-			}
-			fromTag = fromTag[8:]
-			colonIdx := strings.Index(fromTag, ":")
-			if colonIdx == -1 {
-				log.Println("error in check NGCP: malformed FROM-TAG")
-				return errors.New("malformed FROM-TAG")
-			}
-			fromTagLen, err := strconv.Atoi(fromTag[:colonIdx])
-			if err != nil {
-				return errors.New("invalid FROM-TAG length")
-			}
-			// Update NGCPStruct
-			ngcpData.FromTAG = fromTag[colonIdx+1 : colonIdx+1+fromTagLen]
-			// Update SIP struct in Msg
-			msg.SIP.FromTag = fromTag[colonIdx+1 : colonIdx+1+fromTagLen]
-			msg.SIP.HasFromTag = true
-
-			/** TO TAG **/
-			toTag = strNstr(payload, "to-tag", len(payload))
-			if toTag == "" {
-				log.Println("error in check NGCP: no TO-TAG found")
-				return errors.New("no TO-TAG found")
-			}
-			toTag = toTag[6:]
-			colonIdx = strings.Index(toTag, ":")
-			if colonIdx == -1 {
-				log.Println("error in check NGCP: malformed TO-TAG")
-				return errors.New("malformed TO-TAG")
-			}
-			toTagLen, err := strconv.Atoi(toTag[:colonIdx])
-			if err != nil {
-				return errors.New("invalid TO-TAG length")
-			}
-			// Update NGCPStruct
-			ngcpData.ToTAG = toTag[colonIdx+1 : colonIdx+1+toTagLen]
-			// Update SIP struct in Msg
-			msg.SIP.ToTag = toTag[colonIdx+1 : colonIdx+1+toTagLen]
-			msg.SIP.HasToTag = true
-
-		} else if strings.Contains(payload, "delete") {
-			// Update flag for DELETE
-			msg.NGCPComm = DELETE
-			ngcpData.Comm = "DELETE"
-			log.Println("DELETE command found")
-		} else {
-			log.Println("Unsupported command type in NGCP payload")
-			return errors.New("unsupported command type")
+		/** FROM-TAG **/
+		if err := parseFromTag(payload, ngcpData, msg); err != nil {
+			return err
+		}
+		/** Anumber - Bnumber (Optional) **/
+		if err := parseAnumberBnumber(payload, ngcpData, msg); err != nil {
+			return err
+		}
+		/** SIP-IP (Optional) **/
+		if err := parseSipIP(payload, ngcpData, msg); err != nil {
+			return err
 		}
 
-		/** RECEIVED FROM **/
-		receivedFrom = strNstr(payload, "received-from", len(payload))
-		if receivedFrom == "" {
-			log.Println("no RECEIVED-FROM found, ignoring it")
-		}
-		receivedFrom = receivedFrom[19:]
-		colonIdx := strings.Index(receivedFrom, ":")
-		if colonIdx == -1 {
-			log.Println("error in check NGCP: malformed RECEIVED-FROM")
-			return errors.New("malformed RECEIVED-FROM")
-		}
-		receivedFromLen, err := strconv.Atoi(receivedFrom[:colonIdx])
-		if err != nil {
-			return errors.New("invalid RECEIVED-FROM length")
-		}
-		// Update NGCPStruct
-		ngcpData.ReceiveFrom = receivedFrom[colonIdx+1 : colonIdx+1+receivedFromLen]
-		// Update SIP struct in Msg
-		msg.SIP.RuriUser = receivedFrom[colonIdx+1 : colonIdx+1+receivedFromLen]
+	} else if strings.Contains(payload, "answer") {
+		// Set command to ANSWER
+		msg.NGCPComm = ANSWER
+		ngcpData.Comm = "ANSWER"
 
-		/** Checking and parsing MAGIC COOKIE and CALL ID **/
+		/** FROM-TAG **/
+		if err := parseFromTag(payload, ngcpData, msg); err != nil {
+			return err
+		}
+		/** TO-TAG **/
+		if err := parseToTag(payload, ngcpData, msg); err != nil {
+			return err
+		}
 
-		/** COOKIE **/
-		endCookie := strings.Index(payload, " ")
-		if endCookie == -1 {
-			return errors.New("no space found in payload for cookie extraction")
-		}
-		cookie = payload[:endCookie]
+	} else if strings.Contains(payload, "delete") {
+		// Set command to DELETE
+		msg.NGCPComm = DELETE
+		ngcpData.Comm = "DELETE"
+		log.Println("DELETE command found")
+	} else {
+		// Unsupported command type
+		log.Println("Unsupported command type in NGCP payload")
+		return errors.New("unsupported command type")
+	}
 
-		// Update NGCPStruct
-		ngcpData.Cookie = cookie
-		// Update SIP struct in Msg
-		msg.SIP.NgcpCookie = cookie
+	/** ReceiveFrom **/
+	if err := parseReceivedFrom(payload, ngcpData, msg); err != nil {
+		return err
+	}
+	/** Cookie**/
+	if err := parseCookie(payload, ngcpData, msg); err != nil {
+		return err
+	}
+	/** CallID **/
+	if err := parseCallID(payload, ngcpData, msg); err != nil {
+		return err
+	}
+	/** SDP **/
+	if msg.NGCPComm == OFFER || msg.NGCPComm == ANSWER {
+		if err := parseSDP(payload, ngcpData, msg); err != nil {
+			return err
+		}
+	}
 
-		/** CALL ID **/
-		callID = strNstr(payload, "call-id", len(payload))
-		if callID == "" {
-			log.Println("error in check NGCP: no CALL-ID found")
-			return errors.New("no CALL-ID found")
-		}
-		callID = callID[7:]
-		colonIdx = strings.Index(callID, ":")
-		if colonIdx == -1 {
-			log.Println("error in check NGCP: malformed CALL-ID")
-			return errors.New("malformed CALL-ID")
-		}
-		callIDLen, err := strconv.Atoi(callID[:colonIdx])
-		if err != nil {
-			return errors.New("invalid CALL-ID length")
-		}
-		// Update NGCPStruct
-		ngcpData.CallID = callID[colonIdx+1 : colonIdx+1+callIDLen]
-		// Update SIP struct in Msg
-		msg.SIP.CallID = callID[colonIdx+1 : colonIdx+1+callIDLen]
+	return nil
+}
 
-		/** CHECK IF SDP PAYLOAD IS PRESENT (only for OFFER and ANSWER) **/
-		if msg.NGCPComm == OFFER || msg.NGCPComm == ANSWER {
-			if strings.Contains(payload, "sdp") {
-				// Update SIP struct in Msg
-				msg.SIP.HasSdp = true
-				sdp = strNstr(payload, "sdp", len(payload))
-				sdp = sdp[3:]
-				colonIdx = strings.Index(sdp, ":")
-				if colonIdx == -1 {
-					log.Println("error in check NGCP: malformed SDP")
-					return errors.New("malformed SDP")
-				}
-				sdpLen, err := strconv.Atoi(sdp[:colonIdx])
-				if err != nil {
-					return errors.New("invalid SDP length")
-				}
-				// Update NGCPStruct
-				ngcpData.Sdp = sdp[colonIdx+1 : colonIdx+1+sdpLen]
-				// Update SIP struct in Msg
-				msg.SIP.Body = sdp[colonIdx+1 : colonIdx+1+sdpLen]
-			}
-		}
+// processResponsePayload handles RESPONSE-type NGCP payloads
+func processResponsePayload(payload string, ngcpData *NGCPStruct, msg *Msg) error {
+	// Set command to RESPONSE
+	msg.NGCPType = RESPONSE
+	ngcpData.Type = "RESPONSE"
+
+	// Check for non-OK RESPONSE types
+	if strings.Contains(payload, "pong") || strings.Contains(payload, "stats") || strings.Contains(payload, "warning") || strings.Contains(payload, "error") {
+		log.Println("Non-OK RESPONSE type found, ignoring it")
 		return nil
 	}
-	/**
-	** This is a RESPONSE (1)
-	**/
-	if strings.Contains(payload, "result") {
-		// Update flag for reply
-		msg.NGCPType = RESPONSE
-		ngcpData.Type = "RESPONSE"
 
-		/*
-		* NOTE: pong, stats, warning, error are ignoring
-		 */
-		pong := strNstr(payload, "pong", len(payload))
-		if pong != "" {
-			log.Println("PONG command found, ignoring it")
-			return nil
-		}
-		stats := strNstr(payload, "stats", len(payload))
-		if stats != "" {
-			log.Println("STATS command found, ignoring it")
-			return nil
-		}
-		warning := strNstr(payload, "warning", len(payload))
-		if warning != "" {
-			log.Println("WARNING command found, ignoring it")
-			return nil
-		}
-		errr := strNstr(payload, "error", len(payload))
-		if errr != "" {
-			log.Println("ERROR command found, ignoring it")
-			return nil
-		}
+	// Check for OK RESPONSE type
+	if strings.Contains(payload, "ok") {
+		msg.NGCPComm = OK
+		ngcpData.Comm = "OK"
+	} else {
+		log.Println("Unsupported result type in NGCP payload")
+		return errors.New("unsupported result type")
+	}
 
-		/** Check Result type OK **/
-		if strings.Contains(payload, "ok") {
-			// Update flag for OK
-			msg.NGCPComm = OK
-			ngcpData.Comm = "OK"
-		} else {
-			log.Println("Unsupported result type in NGCP payload")
-			return errors.New("unsupported result type")
-		}
+	/** CallID **/
+	if err := parseCookie(payload, ngcpData, msg); err != nil {
+		return err
+	}
+	/** SDP **/
+	if err := parseSDP(payload, ngcpData, msg); err != nil {
+		return err
+	}
 
-		/** CHECKING AND PARSING MAGIC COOKIE AND SDP **/
+	return nil
+}
 
-		/** COOKIE **/
-		endCookie := strings.Index(payload, " ")
-		if endCookie == -1 {
-			return errors.New("no space found in payload for cookie extraction")
-		}
-		cookie = payload[:endCookie]
+/*** Helper functions:
+* parseFromTag
+* parseToTag
+* parseAnumberBnumber
+* parseSipIP
+* parseReceivedFrom
+* parseCookieAndCallID
+* parseSDP
+***/
+func parseFromTag(payload string, ngcpData *NGCPStruct, msg *Msg) error {
+	if !strings.Contains(payload, "from-tag") {
+		log.Println("no FROM-TAG found")
+		return errors.New("no FROM-TAG found")
+	}
 
-		// Update NGCPStruct
-		ngcpData.Cookie = cookie
-		// Update SIP struct in Msg
-		msg.SIP.NgcpCookie = cookie
-		/** CHECK IF SDP PAYLOAD IS PRESENT **/
-		if msg.NGCPComm == OK {
-			if strings.Contains(payload, "sdp") {
-				// Update SIP struct in Msg
-				msg.SIP.HasSdp = true
-				sdp = strNstr(payload, "sdp", len(payload))
-				sdp = sdp[3:]
-				colonIdx := strings.Index(sdp, ":")
-				if colonIdx == -1 {
-					log.Println("error in check NGCP: malformed SDP")
-					return errors.New("malformed SDP")
-				}
-				sdpLen, err := strconv.Atoi(sdp[:colonIdx])
-				if err != nil {
-					return errors.New("invalid SDP length")
-				}
-				// Update NGCPStruct
-				ngcpData.Sdp = sdp[colonIdx+1 : colonIdx+1+sdpLen]
-				// Update SIP struct in Msg
-				msg.SIP.Body = sdp[colonIdx+1 : colonIdx+1+sdpLen]
-			}
+	fromTag := strNstr(payload, "from-tag", len(payload))
+	fromTag = fromTag[8:]
+	colonIdx := strings.Index(fromTag, ":")
+	if colonIdx == -1 {
+		log.Println("error in check NGCP: malformed FROM-TAG")
+		return errors.New("malformed FROM-TAG")
+	}
+	fromTagLen, err := strconv.Atoi(fromTag[:colonIdx])
+	if err != nil {
+		return errors.New("invalid FROM-TAG length")
+	}
+	ngcpData.FromTAG = fromTag[colonIdx+1 : colonIdx+1+fromTagLen]
+	msg.SIP.FromTag = fromTag[colonIdx+1 : colonIdx+1+fromTagLen]
+	msg.SIP.HasFromTag = true
+	return nil
+}
+
+func parseToTag(payload string, ngcpData *NGCPStruct, msg *Msg) error {
+	if !strings.Contains(payload, "to-tag") {
+		log.Println("no TO-TAG found")
+		return errors.New("no TO-TAG found")
+	}
+
+	toTag := strNstr(payload, "to-tag", len(payload))
+	toTag = toTag[6:]
+	colonIdx := strings.Index(toTag, ":")
+	if colonIdx == -1 {
+		log.Println("error in check NGCP: malformed TO-TAG")
+		return errors.New("malformed TO-TAG")
+	}
+	toTagLen, err := strconv.Atoi(toTag[:colonIdx])
+	if err != nil {
+		return errors.New("invalid TO-TAG length")
+	}
+	ngcpData.ToTAG = toTag[colonIdx+1 : colonIdx+1+toTagLen]
+	msg.SIP.ToTag = toTag[colonIdx+1 : colonIdx+1+toTagLen]
+	msg.SIP.HasToTag = true
+	return nil
+}
+
+func parseAnumberBnumber(payload string, ngcpData *NGCPStruct, msg *Msg) error {
+	var skipANumber, skipBNumber bool
+
+	// Check if ANumber is missing
+	if !strings.Contains(payload, "anumber") {
+		skipANumber = true
+		// Check if BNumber is missing
+		if !strings.Contains(payload, "bnumber") {
+			skipBNumber = true
 		}
 	}
+
+	// Validate presence of both numbers
+	if skipANumber && !skipBNumber {
+		return errors.New("missing ANUMBER but BNUMBER is present")
+	} else if !skipANumber && skipBNumber {
+		return errors.New("missing BNUMBER but ANUMBER is present")
+	}
+
+	// Parse ANumber (both ANumber and BNumber are present)
+	if !skipANumber {
+		aNumber := strNstr(payload, "anumber", len(payload))
+		aNumber = aNumber[7:]
+		colonIdx := strings.Index(aNumber, ":")
+		if colonIdx == -1 {
+			return errors.New("malformed ANUMBER")
+		}
+		aNumberLen, err := strconv.Atoi(aNumber[:colonIdx])
+		if err != nil {
+			return errors.New("invalid ANUMBER length")
+		}
+		ngcpData.Anumber = aNumber[colonIdx+1 : colonIdx+1+aNumberLen]
+		msg.SIP.FromUser = ngcpData.Anumber
+	}
+
+	// Parse BNumber
+	if !skipBNumber {
+		bNumber := strNstr(payload, "bnumber", len(payload))
+		bNumber = bNumber[7:]
+		colonIdx := strings.Index(bNumber, ":")
+		if colonIdx == -1 {
+			return errors.New("malformed BNUMBER")
+		}
+		bNumberLen, err := strconv.Atoi(bNumber[:colonIdx])
+		if err != nil {
+			return errors.New("invalid BNUMBER length")
+		}
+		ngcpData.Bnumber = bNumber[colonIdx+1 : colonIdx+1+bNumberLen]
+		msg.SIP.FromUser = ngcpData.Bnumber
+	}
+
+	return nil
+}
+
+func parseSipIP(payload string, ngcpData *NGCPStruct, msg *Msg) error {
+	var skipSipIP bool
+
+	if !strings.Contains(payload, "sipip") {
+		skipSipIP = true
+	}
+
+	if skipSipIP {
+		sipIP := strNstr(payload, "sipip", len(payload))
+		sipIP = sipIP[5:]
+		colonIdx := strings.Index(sipIP, ":")
+		if colonIdx == -1 {
+			log.Println("error in check NGCP: malformed SIP-IP")
+			return errors.New("malformed SIP-IP")
+		}
+		sipIPLen, err := strconv.Atoi(sipIP[:colonIdx])
+		if err != nil {
+			log.Println("invalid SIP-IP length")
+			return errors.New("invalid SIP-IP length")
+		}
+		ngcpData.SipIP = sipIP[colonIdx+1 : colonIdx+1+sipIPLen]
+		msg.SIP.NgcpSipip = sipIP[colonIdx+1 : colonIdx+1+sipIPLen]
+	}
+	return nil
+}
+
+func parseReceivedFrom(payload string, ngcpData *NGCPStruct, msg *Msg) error {
+	if !strings.Contains(payload, "received-from") {
+		log.Println("no RECEIVED-FROM found, ignoring it")
+		return nil
+	}
+
+	receivedFrom := strNstr(payload, "received-from", len(payload))
+	receivedFrom = receivedFrom[19:]
+	colonIdx := strings.Index(receivedFrom, ":")
+	if colonIdx == -1 {
+		log.Println("error in check NGCP: malformed RECEIVED-FROM")
+		return errors.New("malformed RECEIVED-FROM")
+	}
+	receivedFromLen, err := strconv.Atoi(receivedFrom[:colonIdx])
+	if err != nil {
+		return errors.New("invalid RECEIVED-FROM length")
+	}
+	ngcpData.ReceiveFrom = receivedFrom[colonIdx+1 : colonIdx+1+receivedFromLen]
+	msg.SIP.RuriUser = receivedFrom[colonIdx+1 : colonIdx+1+receivedFromLen]
+	return nil
+}
+
+func parseCookie(payload string, ngcpData *NGCPStruct, msg *Msg) error {
+	endCookie := strings.Index(payload, " ")
+	if endCookie == -1 {
+		return errors.New("no space found in payload for cookie extraction")
+	}
+	ngcpData.Cookie = payload[:endCookie]
+	msg.SIP.NgcpCookie = ngcpData.Cookie
+
+	return nil
+}
+
+func parseCallID(payload string, ngcpData *NGCPStruct, msg *Msg) error {
+	if !strings.Contains(payload, "call-id") {
+		return errors.New("no CALL-ID found")
+	}
+
+	callID := strNstr(payload, "call-id", len(payload))
+	callID = callID[7:]
+	colonIdx := strings.Index(callID, ":")
+	if colonIdx == -1 {
+		log.Println("error in check NGCP: malformed CALL-ID")
+		return errors.New("malformed CALL-ID")
+	}
+	callIDLen, err := strconv.Atoi(callID[:colonIdx])
+	if err != nil {
+		return errors.New("invalid CALL-ID length")
+	}
+	ngcpData.CallID = callID[colonIdx+1 : colonIdx+1+callIDLen]
+	msg.SIP.CallID = callID[colonIdx+1 : colonIdx+1+callIDLen]
+
+	return nil
+}
+
+func parseSDP(payload string, ngcpData *NGCPStruct, msg *Msg) error {
+	if !strings.Contains(payload, "sdp") {
+		return errors.New("no SDP found")
+	}
+
+	sdp := strNstr(payload, "sdp", len(payload))
+	sdp = sdp[3:]
+	colonIdx := strings.Index(sdp, ":")
+	if colonIdx == -1 {
+		log.Println("error in check NGCP: malformed SDP")
+		return errors.New("malformed SDP")
+	}
+	sdpLen, err := strconv.Atoi(sdp[:colonIdx])
+	if err != nil {
+		log.Println("invalid SDP length")
+		return errors.New("invalid SDP length")
+	}
+	ngcpData.Sdp = sdp[colonIdx+1 : colonIdx+1+sdpLen]
+	msg.SIP.Body = sdp[colonIdx+1 : colonIdx+1+sdpLen]
+
 	return nil
 }
