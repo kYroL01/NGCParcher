@@ -34,6 +34,7 @@ const (
 	OFFER  = iota // 0
 	ANSWER        // 1
 	DELETE        // 2
+	OK            // 3
 )
 
 func strNstr(haystack, needle string, maxLen int) string {
@@ -129,18 +130,18 @@ func processNGCPPayload(payload string, ngcpData *NGCPStruct, msg *Msg) error {
 	}
 
 	var (
-		//sdp         string = ""
-		cookie  string = ""
-		callID  string = ""
-		aNumber string = ""
-		bNumber string = ""
-		fromTag string = ""
-		toTag   string = ""
-		sipIP   string = ""
-		//receiveFrom string = ""
-		skipANumber bool = false
-		skipBNumber bool = false
-		skipSipIP   bool = false
+		sdp          string = ""
+		cookie       string = ""
+		callID       string = ""
+		aNumber      string = ""
+		bNumber      string = ""
+		fromTag      string = ""
+		toTag        string = ""
+		sipIP        string = ""
+		receivedFrom string = ""
+		skipANumber  bool   = false
+		skipBNumber  bool   = false
+		skipSipIP    bool   = false
 	)
 
 	/**
@@ -152,7 +153,8 @@ func processNGCPPayload(payload string, ngcpData *NGCPStruct, msg *Msg) error {
 		msg.NGCPType = REQUEST
 		ngcpData.Type = "REQUEST"
 
-		// Check command type
+		/** Check command type OFFER, ANSWER, DELETE **/
+
 		if strings.Contains(payload, "offer") {
 			// Update flag for OFFER
 			msg.NGCPComm = OFFER
@@ -240,7 +242,7 @@ func processNGCPPayload(payload string, ngcpData *NGCPStruct, msg *Msg) error {
 			if !strings.Contains(payload, "sipip") {
 				skipSipIP = true
 			}
-			/* SIP-IP*/
+			/** SIP-IP **/
 			if !skipSipIP {
 				sipIP = strNstr(payload, "sipip", len(payload))
 				sipIP = sipIP[5:]
@@ -319,6 +321,26 @@ func processNGCPPayload(payload string, ngcpData *NGCPStruct, msg *Msg) error {
 			return errors.New("unsupported command type")
 		}
 
+		/** RECEIVED FROM **/
+		receivedFrom = strNstr(payload, "received-from", len(payload))
+		if receivedFrom == "" {
+			log.Println("no RECEIVED-FROM found, ignoring it")
+		}
+		receivedFrom = receivedFrom[19:]
+		colonIdx := strings.Index(receivedFrom, ":")
+		if colonIdx == -1 {
+			log.Println("error in check NGCP: malformed RECEIVED-FROM")
+			return errors.New("malformed RECEIVED-FROM")
+		}
+		receivedFromLen, err := strconv.Atoi(receivedFrom[:colonIdx])
+		if err != nil {
+			return errors.New("invalid RECEIVED-FROM length")
+		}
+		// Update NGCPStruct
+		ngcpData.ReceiveFrom = receivedFrom[colonIdx+1 : colonIdx+1+receivedFromLen]
+		// Update SIP struct in Msg
+		msg.SIP.RuriUser = receivedFrom[colonIdx+1 : colonIdx+1+receivedFromLen]
+
 		/** Checking and parsing MAGIC COOKIE and CALL ID **/
 
 		/** COOKIE **/
@@ -340,7 +362,7 @@ func processNGCPPayload(payload string, ngcpData *NGCPStruct, msg *Msg) error {
 			return errors.New("no CALL-ID found")
 		}
 		callID = callID[7:]
-		colonIdx := strings.Index(callID, ":")
+		colonIdx = strings.Index(callID, ":")
 		if colonIdx == -1 {
 			log.Println("error in check NGCP: malformed CALL-ID")
 			return errors.New("malformed CALL-ID")
@@ -354,7 +376,107 @@ func processNGCPPayload(payload string, ngcpData *NGCPStruct, msg *Msg) error {
 		// Update SIP struct in Msg
 		msg.SIP.CallID = callID[colonIdx+1 : colonIdx+1+callIDLen]
 
+		/** CHECK IF SDP PAYLOAD IS PRESENT (only for OFFER and ANSWER) **/
+		if msg.NGCPComm == OFFER || msg.NGCPComm == ANSWER {
+			if strings.Contains(payload, "sdp") {
+				// Update SIP struct in Msg
+				msg.SIP.HasSdp = true
+				sdp = strNstr(payload, "sdp", len(payload))
+				sdp = sdp[3:]
+				colonIdx = strings.Index(sdp, ":")
+				if colonIdx == -1 {
+					log.Println("error in check NGCP: malformed SDP")
+					return errors.New("malformed SDP")
+				}
+				sdpLen, err := strconv.Atoi(sdp[:colonIdx])
+				if err != nil {
+					return errors.New("invalid SDP length")
+				}
+				// Update NGCPStruct
+				ngcpData.Sdp = sdp[colonIdx+1 : colonIdx+1+sdpLen]
+				// Update SIP struct in Msg
+				msg.SIP.Body = sdp[colonIdx+1 : colonIdx+1+sdpLen]
+			}
+		}
 		return nil
+	}
+	/**
+	** This is a RESPONSE (1)
+	**/
+	if strings.Contains(payload, "result") {
+		// Update flag for reply
+		msg.NGCPType = RESPONSE
+		ngcpData.Type = "RESPONSE"
+
+		/*
+		* NOTE: pong, stats, warning, error are ignoring
+		 */
+		pong := strNstr(payload, "pong", len(payload))
+		if pong != "" {
+			log.Println("PONG command found, ignoring it")
+			return nil
+		}
+		stats := strNstr(payload, "stats", len(payload))
+		if stats != "" {
+			log.Println("STATS command found, ignoring it")
+			return nil
+		}
+		warning := strNstr(payload, "warning", len(payload))
+		if warning != "" {
+			log.Println("WARNING command found, ignoring it")
+			return nil
+		}
+		errr := strNstr(payload, "error", len(payload))
+		if errr != "" {
+			log.Println("ERROR command found, ignoring it")
+			return nil
+		}
+
+		/** Check Result type OK **/
+		if strings.Contains(payload, "ok") {
+			// Update flag for OK
+			msg.NGCPComm = OK
+			ngcpData.Comm = "OK"
+		} else {
+			log.Println("Unsupported result type in NGCP payload")
+			return errors.New("unsupported result type")
+		}
+
+		/** CHECKING AND PARSING MAGIC COOKIE AND SDP **/
+
+		/** COOKIE **/
+		endCookie := strings.Index(payload, " ")
+		if endCookie == -1 {
+			return errors.New("no space found in payload for cookie extraction")
+		}
+		cookie = payload[:endCookie]
+
+		// Update NGCPStruct
+		ngcpData.Cookie = cookie
+		// Update SIP struct in Msg
+		msg.SIP.NgcpCookie = cookie
+		/** CHECK IF SDP PAYLOAD IS PRESENT **/
+		if msg.NGCPComm == OK {
+			if strings.Contains(payload, "sdp") {
+				// Update SIP struct in Msg
+				msg.SIP.HasSdp = true
+				sdp = strNstr(payload, "sdp", len(payload))
+				sdp = sdp[3:]
+				colonIdx := strings.Index(sdp, ":")
+				if colonIdx == -1 {
+					log.Println("error in check NGCP: malformed SDP")
+					return errors.New("malformed SDP")
+				}
+				sdpLen, err := strconv.Atoi(sdp[:colonIdx])
+				if err != nil {
+					return errors.New("invalid SDP length")
+				}
+				// Update NGCPStruct
+				ngcpData.Sdp = sdp[colonIdx+1 : colonIdx+1+sdpLen]
+				// Update SIP struct in Msg
+				msg.SIP.Body = sdp[colonIdx+1 : colonIdx+1+sdpLen]
+			}
+		}
 	}
 	return nil
 }
