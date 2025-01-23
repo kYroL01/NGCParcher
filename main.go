@@ -137,8 +137,8 @@ func readPcapFile(filename string) {
 		}
 		if ngcpData.Comm == "OFFER" || ngcpData.Comm == "ANSWER" || ngcpData.Comm == "DELETE" || ngcpData.Comm == "OK" {
 			fmt.Printf("Parsed NGCP Data:\n")
-			fmt.Printf("- Type: %s\n- Comm: %s\n- Sdp: %s\n- Cookie: %s\n- CallID: %s\n- Anumber: %s\n- Bnumber: %s\n- FromTAG: %s\n- ToTAG: %s\n- SipIP: %s\n- ReceiveFrom: %s\n",
-				ngcpData.Type, ngcpData.Comm, ngcpData.Sdp, ngcpData.Cookie, ngcpData.CallID, ngcpData.Anumber, ngcpData.Bnumber, ngcpData.FromTAG, ngcpData.ToTAG, ngcpData.SipIP, ngcpData.ReceiveFrom)
+			fmt.Printf("- Type: %s\n- Comm: %s\n- Cookie: %s\n- CallID: %s\n- Anumber: %s\n- Bnumber: %s\n- FromTAG: %s\n- ToTAG: %s\n- SipIP: %s\n- ReceiveFrom: %s\n",
+				ngcpData.Type, ngcpData.Comm, ngcpData.Cookie, ngcpData.CallID, ngcpData.Anumber, ngcpData.Bnumber, ngcpData.FromTAG, ngcpData.ToTAG, ngcpData.SipIP, ngcpData.ReceiveFrom)
 		}
 		//fmt.Printf("Parsed SIP Data:\n")
 		//fmt.Printf("Method: %s\n, StatusCode: %d\n, Headers: %v\n, Body: %s\n, FromTag: %s\n, HasFromTag: %t\n, FromUser: %s\n, ToTag: %s\n, HasToTag: %t\n, RuriUser: %s\n, NgcpSipip: %s\n, NgcpCookie: %s\n, CallID: %s\n, HasSdp: %t\n",

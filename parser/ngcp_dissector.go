@@ -16,6 +16,7 @@
 package parser
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"log"
@@ -452,7 +453,46 @@ func parseSDP(payload string, ngcpData *NGCPStruct, msg *Msg) error {
 		return errors.New("invalid SDP length")
 	}
 	ngcpData.Sdp = sdp[colonIdx+1 : colonIdx+1+sdpLen]
-	msg.SIP.Body = sdp[colonIdx+1 : colonIdx+1+sdpLen]
 
-	return nil
+	// converting sdp from string to []byte
+	lines := bytes.Split([]byte(sdp), []byte("\r\n"))
+	if len(lines) < 2 {
+		return errors.New("invalid SDP format")
+	}
+
+	var attr_idx int = 0
+
+	// Process each line
+	for _, line := range lines {
+		if len(line) == 0 {
+			continue // Skip empty lines
+		}
+
+		// Parse each line
+		if len(line) > 1 && line[1] == '=' {
+			lhdr := strings.ToLower(string(line[0])) // Get the header
+			lval := bytes.TrimSpace(line[2:])        // Get the value
+			fmt.Printf("Header: %s, Value: %s\n", lhdr, lval)
+
+			// Process the header
+			switch lhdr {
+			case "m":
+				// Media description
+				parseSdpMediaDesc(lval, &msg.SIP.Sdp.MediaDesc)
+			case "a":
+				// Attribute
+				var tmpAttrib sdpAttrib
+				msg.SIP.Sdp.Attrib = append(msg.SIP.Sdp.Attrib, tmpAttrib)
+				parseSdpAttrib(lval, &msg.SIP.Sdp.Attrib[attr_idx])
+				attr_idx++
+			case "c":
+				// Connection data
+				parseSdpConnData(lval, &msg.SIP.Sdp.ConnData)
+			}
+		}
+
+		//msg.SIP.Body = sdp[colonIdx+1 : colonIdx+1+sdpLen]
+
+		return nil
+	}
 }
