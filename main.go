@@ -82,7 +82,7 @@ var msg = &parser.Msg{}
 
 func main() {
 
-	fmt.Printf(">>--- WELCOME to ngcp_archer %s--->\n", version)
+	fmt.Printf(">>--- WELCOME to ngcp_archer %s --->\n", version)
 	// Parse options
 	opts := parseOptions()
 
@@ -136,12 +136,30 @@ func readPcapFile(filename string) {
 			continue
 		}
 		if ngcpData.Comm == "OFFER" || ngcpData.Comm == "ANSWER" || ngcpData.Comm == "DELETE" || ngcpData.Comm == "OK" {
-			fmt.Printf("Parsed NGCP Data:\n")
+			fmt.Printf("NGCP Data from NGCPStruct:\n")
 			fmt.Printf("- Type: %s\n- Comm: %s\n- Cookie: %s\n- CallID: %s\n- Anumber: %s\n- Bnumber: %s\n- FromTAG: %s\n- ToTAG: %s\n- SipIP: %s\n- ReceiveFrom: %s\n",
 				ngcpData.Type, ngcpData.Comm, ngcpData.Cookie, ngcpData.CallID, ngcpData.Anumber, ngcpData.Bnumber, ngcpData.FromTAG, ngcpData.ToTAG, ngcpData.SipIP, ngcpData.ReceiveFrom)
 		}
-		//fmt.Printf("Parsed SIP Data:\n")
-		//fmt.Printf("Method: %s\n, StatusCode: %d\n, Headers: %v\n, Body: %s\n, FromTag: %s\n, HasFromTag: %t\n, FromUser: %s\n, ToTag: %s\n, HasToTag: %t\n, RuriUser: %s\n, NgcpSipip: %s\n, NgcpCookie: %s\n, CallID: %s\n, HasSdp: %t\n",
-		//	msg.SIP.Method, msg.SIP.StatusCode, msg.SIP.Headers, msg.SIP.Body, msg.SIP.FromTag, msg.SIP.HasFromTag, msg.SIP.FromUser, msg.SIP.ToTag, msg.SIP.HasToTag, msg.SIP.RuriUser, msg.SIP.NgcpSipip, msg.SIP.NgcpCookie, msg.SIP.CallID, msg.SIP.HasSdp)
+		fmt.Printf("SDP Data from NGCP:\n")
+		fmt.Printf("- MEDIA:\n")
+		fmt.Printf("-- MediaType: %s\n", msg.SIP.Sdp.MediaDesc.MediaType)
+		fmt.Printf("-- Port: %s\n", msg.SIP.Sdp.MediaDesc.Port)
+		fmt.Printf("-- Proto: %s\n", msg.SIP.Sdp.MediaDesc.Proto)
+		fmt.Printf("-- Fmt: %s\n", msg.SIP.Sdp.MediaDesc.Fmt)
+		fmt.Printf("-- Src: %s\n", msg.SIP.Sdp.MediaDesc.Src)
+		fmt.Printf("- ATTRIBUTES:\n")
+		for _, attrib := range msg.SIP.Sdp.Attrib {
+			if attrib.Cat == nil {
+				continue
+			}
+			fmt.Printf("-- Cat: %s\n", attrib.Cat)
+			fmt.Printf("-- Val: %s\n", attrib.Val)
+			fmt.Printf("-- Src: %s\n", attrib.Src)
+		}
+		fmt.Printf("- CONNECTION DATA:\n")
+		fmt.Printf("-- AddrType: %s\n", msg.SIP.Sdp.ConnData.AddrType)
+		fmt.Printf("-- ConnAddr: %s\n", msg.SIP.Sdp.ConnData.ConnAddr)
+		fmt.Printf("-- Src: %s\n", msg.SIP.Sdp.ConnData.Src)
+		fmt.Println("--------------------------------------------------")
 	}
 }

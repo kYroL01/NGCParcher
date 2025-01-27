@@ -23,6 +23,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/qxip/rtpagent-go/siprocket"
+
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 )
@@ -472,27 +474,33 @@ func parseSDP(payload string, ngcpData *NGCPStruct, msg *Msg) error {
 		if len(line) > 1 && line[1] == '=' {
 			lhdr := strings.ToLower(string(line[0])) // Get the header
 			lval := bytes.TrimSpace(line[2:])        // Get the value
-			fmt.Printf("Header: %s, Value: %s\n", lhdr, lval)
+			//fmt.Printf("Header: %s, Value: %s\n", lhdr, lval)
 
 			// Process the header
 			switch lhdr {
 			case "m":
 				// Media description
-				parseSdpMediaDesc(lval, &msg.SIP.Sdp.MediaDesc)
+				var mediaDesc siprocket.SdpMediaDesc
+				siprocket.ParseSdpMediaDesc(lval, &mediaDesc)
+				msg.SIP.Sdp.MediaDesc = sdpMediaDesc(mediaDesc)
+
 			case "a":
 				// Attribute
 				var tmpAttrib sdpAttrib
 				msg.SIP.Sdp.Attrib = append(msg.SIP.Sdp.Attrib, tmpAttrib)
-				parseSdpAttrib(lval, &msg.SIP.Sdp.Attrib[attr_idx])
+				var sipAttrib siprocket.SdpAttrib
+				siprocket.ParseSdpAttrib(lval, &sipAttrib)
+				msg.SIP.Sdp.Attrib[attr_idx] = sdpAttrib(sipAttrib)
 				attr_idx++
 			case "c":
 				// Connection data
-				parseSdpConnData(lval, &msg.SIP.Sdp.ConnData)
+				var connData siprocket.SdpConnData
+				siprocket.ParseSdpConnectionData(lval, &connData)
+				msg.SIP.Sdp.ConnData = sdpConnData(connData)
 			}
 		}
 
 		//msg.SIP.Body = sdp[colonIdx+1 : colonIdx+1+sdpLen]
-
-		return nil
 	}
+	return nil
 }
