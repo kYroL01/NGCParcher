@@ -1,4 +1,5 @@
 // Copyright 2025 Michele Campus michelecampus5@gmail.com
+// Copyright 2025 QXIP B.V https://qxip.net
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
