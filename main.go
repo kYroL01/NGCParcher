@@ -17,6 +17,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"os"
@@ -34,6 +35,20 @@ const version = "1.0.0"
 type Options struct {
 	Interface string
 	PcapFile  string
+}
+
+// ExtractIPFromValue extracts the IP after "IP4" in the given []byte input.
+func ExtractIPFromValue(val []byte) string {
+	// Find the index of "IP4 "
+	ip4Index := bytes.Index(val, []byte("IP4 "))
+	if ip4Index != -1 {
+		// Extract the substring after "IP4 "
+		ipPart := val[ip4Index+4:]
+		// Trim leading/trailing spaces if needed
+		ipPart = bytes.TrimSpace(ipPart)
+		return string(ipPart)
+	}
+	return "" // Return empty if "IP4" not found
 }
 
 // listAvailableDevices lists all the available network devices
@@ -156,6 +171,12 @@ func readPcapFile(filename string) {
 			fmt.Printf("-- Cat: %s\n", attrib.Cat)
 			fmt.Printf("-- Val: %s\n", attrib.Val)
 			fmt.Printf("-- Src: %s\n", attrib.Src)
+			if string(attrib.Cat) == "rtcp" {
+				rtcpIP := ExtractIPFromValue(attrib.Val)
+				if rtcpIP != "" {
+					fmt.Printf("--> RTCP IP: %s\n", rtcpIP)
+				}
+			}
 		}
 		fmt.Printf("- CONNECTION DATA:\n")
 		fmt.Printf("-- AddrType: %s\n", msg.SIP.Sdp.ConnData.AddrType)
