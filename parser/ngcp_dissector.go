@@ -361,7 +361,7 @@ func parseSipIP(payload string, ngcpData *NGCPStruct, msg *Msg) error {
 		skipSipIP = true
 	}
 
-	if skipSipIP {
+	if !skipSipIP {
 		sipIP := strNstr(payload, "sipip", len(payload))
 		sipIP = sipIP[5:]
 		colonIdx := strings.Index(sipIP, ":")
