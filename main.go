@@ -55,7 +55,7 @@ func parseOptions() Options {
 	// Define flags
 	interfaceName := pflag.StringP("interface", "i", "", "Name of the interface to capture packets from")
 	pcapFile := pflag.StringP("pcap", "p", "", "Path to the pcap file to read")
-	listDevices := pflag.BoolP("list", "l", false, "List available devices")
+	listDevices := pflag.BoolP("list", "l", false, "List all available network devices")
 
 	// Parse flags
 	pflag.Parse()
