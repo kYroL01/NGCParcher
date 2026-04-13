@@ -27,29 +27,46 @@ import (
 	"github.com/google/gopacket/layers"
 )
 
+type NGCPMsgType int
+
 const (
-	REQUEST  = iota // 0
-	RESPONSE        // 1
-)
-const (
-	OFFER  = iota // 0
-	ANSWER        // 1
-	DELETE        // 2
-	OK            // 3
+	REQUEST  NGCPMsgType = iota // 0
+	RESPONSE                    // 1
 )
 
-func strNstr(haystack, needle string, maxLen int) string {
-	// Ensure we limit haystack to maxLen characters
-	if len(haystack) > maxLen {
-		haystack = haystack[:maxLen]
-	}
+type NGCPCommand int
 
-	index := strings.Index(haystack, needle)
-	if index == -1 {
-		return ""
-	}
+const (
+	OFFER  NGCPCommand = iota // 0
+	ANSWER                    // 1
+	DELETE                    // 2
+	OK                        // 3
+)
 
-	return haystack[index:]
+var debugLog bool
+
+// parseField finds key in payload and parses its bencode-style value (len:data).
+// offset is the number of bytes to skip after the key before looking for the colon.
+// For most keys offset == len(key). For "received-from" offset is 19 (intentional protocol skip).
+func parseField(payload, key string, offset int) (string, error) {
+	idx := strings.Index(payload, key)
+	if idx == -1 {
+		return "", fmt.Errorf("%s not found", key)
+	}
+	sub := payload[idx+offset:]
+	colonIdx := strings.Index(sub, ":")
+	if colonIdx == -1 {
+		return "", fmt.Errorf("malformed %s: missing colon", key)
+	}
+	length, err := strconv.Atoi(sub[:colonIdx])
+	if err != nil {
+		return "", fmt.Errorf("invalid %s length: %w", key, err)
+	}
+	end := colonIdx + 1 + length
+	if end > len(sub) {
+		return "", fmt.Errorf("%s length exceeds payload bounds", key)
+	}
+	return sub[colonIdx+1 : end], nil
 }
 
 // ParseNGCP parses the NGCP protocol
@@ -59,53 +76,65 @@ func ParseNGCP(packet gopacket.Packet, msg *Msg) (*NGCPStruct, error) {
 	var payload []byte
 
 	// Print all layers detected in the packet
-	log.Println("Layers found in the packet:")
-	for _, layer := range packet.Layers() {
-		log.Println(" - ", layer.LayerType())
+	if debugLog {
+		log.Println("Layers found in the packet:")
+		for _, layer := range packet.Layers() {
+			log.Println(" - ", layer.LayerType())
+		}
 	}
 
 	// TODO Check for linux cooked capture layer (SLL v2)
 
 	// Check for Linux cooked capture layer (SLL v1)
 	sllLayer := packet.Layer(layers.LayerTypeLinuxSLL)
-	if sllLayer != nil {
+	if sllLayer != nil && debugLog {
 		log.Println("Linux Cooked Layer (SLL v1) found")
 	}
 	// Check for an Ethernet layer
 	ethLayer := packet.Layer(layers.LayerTypeEthernet)
-	if ethLayer != nil {
+	if ethLayer != nil && debugLog {
 		log.Println("Ethernet layer found")
 	}
 	// Check for an IP layer
 	ipLayer := packet.Layer(layers.LayerTypeIPv4)
 	if ipLayer != nil {
-		ip, _ := ipLayer.(*layers.IPv4)
-		log.Println("IP layer found with SrcIP:", ip.SrcIP, "and DstIP:", ip.DstIP)
+		if debugLog {
+			ip, _ := ipLayer.(*layers.IPv4)
+			log.Println("IP layer found with SrcIP:", ip.SrcIP, "and DstIP:", ip.DstIP)
+		}
 	}
 	// Check for IPv6 layer
 	ip6Layer := packet.Layer(layers.LayerTypeIPv6)
 	if ip6Layer != nil {
-		ip6, _ := ip6Layer.(*layers.IPv6)
-		log.Println("IP layer found with SrcIP:", ip6.SrcIP, "and DstIP:", ip6.DstIP)
+		if debugLog {
+			ip6, _ := ip6Layer.(*layers.IPv6)
+			log.Println("IP layer found with SrcIP:", ip6.SrcIP, "and DstIP:", ip6.DstIP)
+		}
 	}
 	// Check for a TCP layer
 	tcpLayer := packet.Layer(layers.LayerTypeTCP)
 	if tcpLayer != nil {
-		tcp, _ := tcpLayer.(*layers.TCP)
-		log.Println("TCP layer found with SrcPort:", tcp.SrcPort, "and DstPort:", tcp.DstPort)
+		if debugLog {
+			tcp, _ := tcpLayer.(*layers.TCP)
+			log.Println("TCP layer found with SrcPort:", tcp.SrcPort, "and DstPort:", tcp.DstPort)
+		}
 	}
 	// Check for a UDP layer
 	udpLayer := packet.Layer(layers.LayerTypeUDP)
 	if udpLayer != nil {
-		udp, _ := udpLayer.(*layers.UDP)
-		log.Println("UDP layer found with SrcPort:", udp.SrcPort, "and DstPort:", udp.DstPort)
+		if debugLog {
+			udp, _ := udpLayer.(*layers.UDP)
+			log.Println("UDP layer found with SrcPort:", udp.SrcPort, "and DstPort:", udp.DstPort)
+		}
 	}
 
 	// Raw payload (last layer)
 	appLayer := packet.ApplicationLayer()
 	if appLayer != nil {
 		payload = appLayer.Payload()
-		log.Printf("Application layer payload size: %d\n", len(payload))
+		if debugLog {
+			log.Printf("Application layer payload size: %d\n", len(payload))
+		}
 		if len(payload) == 0 {
 			return nil, errors.New("application layer payload is empty")
 		}
@@ -233,7 +262,7 @@ func processResponsePayload(payload string, ngcpData *NGCPStruct, msg *Msg) erro
 		return errors.New("unsupported result type")
 	}
 
-	/** CallID **/
+	/** Cookie **/
 	if err := parseCookie(payload, ngcpData, msg); err != nil {
 		return err
 	}
@@ -246,136 +275,79 @@ func processResponsePayload(payload string, ngcpData *NGCPStruct, msg *Msg) erro
 }
 
 /*** Helper functions:
+* parseField
 * parseFromTag
 * parseToTag
 * parseAnumberBnumber
 * parseSipIP
 * parseReceivedFrom
-* parseCookieAndCallID
+* parseCookie
+* parseCallID
 * parseSDP
 ***/
 func parseFromTag(payload string, ngcpData *NGCPStruct, msg *Msg) error {
-	if !strings.Contains(payload, "from-tag") {
-		log.Println("no FROM-TAG found")
-		return errors.New("no FROM-TAG found")
-	}
-
-	fromTag := strNstr(payload, "from-tag", len(payload))
-	fromTag = fromTag[8:]
-	colonIdx := strings.Index(fromTag, ":")
-	if colonIdx == -1 {
-		log.Println("error in check NGCP: malformed FROM-TAG")
-		return errors.New("malformed FROM-TAG")
-	}
-	fromTagLen, err := strconv.Atoi(fromTag[:colonIdx])
+	val, err := parseField(payload, "from-tag", len("from-tag"))
 	if err != nil {
-		return errors.New("invalid FROM-TAG length")
+		return fmt.Errorf("no FROM-TAG found: %w", err)
 	}
-	ngcpData.FromTAG = fromTag[colonIdx+1 : colonIdx+1+fromTagLen]
-	msg.SIP.FromTag = fromTag[colonIdx+1 : colonIdx+1+fromTagLen]
+	ngcpData.FromTAG = val
+	msg.SIP.FromTag = val
 	msg.SIP.HasFromTag = true
 	return nil
 }
 
 func parseToTag(payload string, ngcpData *NGCPStruct, msg *Msg) error {
-	if !strings.Contains(payload, "to-tag") {
-		log.Println("no TO-TAG found")
-		return errors.New("no TO-TAG found")
-	}
-
-	toTag := strNstr(payload, "to-tag", len(payload))
-	toTag = toTag[6:]
-	colonIdx := strings.Index(toTag, ":")
-	if colonIdx == -1 {
-		log.Println("error in check NGCP: malformed TO-TAG")
-		return errors.New("malformed TO-TAG")
-	}
-	toTagLen, err := strconv.Atoi(toTag[:colonIdx])
+	val, err := parseField(payload, "to-tag", len("to-tag"))
 	if err != nil {
-		return errors.New("invalid TO-TAG length")
+		return fmt.Errorf("no TO-TAG found: %w", err)
 	}
-	ngcpData.ToTAG = toTag[colonIdx+1 : colonIdx+1+toTagLen]
-	msg.SIP.ToTag = toTag[colonIdx+1 : colonIdx+1+toTagLen]
+	ngcpData.ToTAG = val
+	msg.SIP.ToTag = val
 	msg.SIP.HasToTag = true
 	return nil
 }
 
 func parseAnumberBnumber(payload string, ngcpData *NGCPStruct, msg *Msg) error {
-	var skipANumber, skipBNumber bool
-
-	// Check if ANumber is missing
-	if !strings.Contains(payload, "anumber") {
-		skipANumber = true
-		// Check if BNumber is missing
-		if !strings.Contains(payload, "bnumber") {
-			skipBNumber = true
-		}
-	}
+	hasAnumber := strings.Contains(payload, "anumber")
+	hasBnumber := strings.Contains(payload, "bnumber")
 
 	// Validate presence of both numbers
-	if skipANumber && !skipBNumber {
-		return errors.New("missing ANUMBER but BNUMBER is present")
-	} else if !skipANumber && skipBNumber {
+	if hasAnumber && !hasBnumber {
 		return errors.New("missing BNUMBER but ANUMBER is present")
 	}
-
-	// Parse ANumber (both ANumber and BNumber are present)
-	if !skipANumber {
-		aNumber := strNstr(payload, "anumber", len(payload))
-		aNumber = aNumber[7:]
-		colonIdx := strings.Index(aNumber, ":")
-		if colonIdx == -1 {
-			return errors.New("malformed ANUMBER")
-		}
-		aNumberLen, err := strconv.Atoi(aNumber[:colonIdx])
-		if err != nil {
-			return errors.New("invalid ANUMBER length")
-		}
-		ngcpData.Anumber = aNumber[colonIdx+1 : colonIdx+1+aNumberLen]
-		msg.SIP.FromUser = ngcpData.Anumber
+	if !hasAnumber && hasBnumber {
+		return errors.New("missing ANUMBER but BNUMBER is present")
 	}
 
-	// Parse BNumber
-	if !skipBNumber {
-		bNumber := strNstr(payload, "bnumber", len(payload))
-		bNumber = bNumber[7:]
-		colonIdx := strings.Index(bNumber, ":")
-		if colonIdx == -1 {
-			return errors.New("malformed BNUMBER")
-		}
-		bNumberLen, err := strconv.Atoi(bNumber[:colonIdx])
+	if hasAnumber {
+		val, err := parseField(payload, "anumber", len("anumber"))
 		if err != nil {
-			return errors.New("invalid BNUMBER length")
+			return err
 		}
-		ngcpData.Bnumber = bNumber[colonIdx+1 : colonIdx+1+bNumberLen]
-		msg.SIP.FromUser = ngcpData.Bnumber
+		ngcpData.Anumber = val
+		msg.SIP.FromUser = val
+	}
+
+	if hasBnumber {
+		val, err := parseField(payload, "bnumber", len("bnumber"))
+		if err != nil {
+			return err
+		}
+		ngcpData.Bnumber = val
+		msg.SIP.ToUser = val
 	}
 
 	return nil
 }
 
 func parseSipIP(payload string, ngcpData *NGCPStruct, msg *Msg) error {
-	var skipSipIP bool
-
-	if !strings.Contains(payload, "sipip") {
-		skipSipIP = true
-	}
-
-	if !skipSipIP {
-		sipIP := strNstr(payload, "sipip", len(payload))
-		sipIP = sipIP[5:]
-		colonIdx := strings.Index(sipIP, ":")
-		if colonIdx == -1 {
-			log.Println("error in check NGCP: malformed SIP-IP")
-			return errors.New("malformed SIP-IP")
-		}
-		sipIPLen, err := strconv.Atoi(sipIP[:colonIdx])
+	if strings.Contains(payload, "sipip") {
+		val, err := parseField(payload, "sipip", len("sipip"))
 		if err != nil {
-			log.Println("invalid SIP-IP length")
-			return errors.New("invalid SIP-IP length")
+			return err
 		}
-		ngcpData.SipIP = sipIP[colonIdx+1 : colonIdx+1+sipIPLen]
-		msg.SIP.NgcpSipip = sipIP[colonIdx+1 : colonIdx+1+sipIPLen]
+		ngcpData.SipIP = val
+		msg.SIP.NgcpSipip = val
 	}
 	return nil
 }
@@ -386,19 +358,12 @@ func parseReceivedFrom(payload string, ngcpData *NGCPStruct, msg *Msg) error {
 		return nil
 	}
 
-	receivedFrom := strNstr(payload, "received-from", len(payload))
-	receivedFrom = receivedFrom[19:]
-	colonIdx := strings.Index(receivedFrom, ":")
-	if colonIdx == -1 {
-		log.Println("error in check NGCP: malformed RECEIVED-FROM")
-		return errors.New("malformed RECEIVED-FROM")
-	}
-	receivedFromLen, err := strconv.Atoi(receivedFrom[:colonIdx])
+	val, err := parseField(payload, "received-from", 19)
 	if err != nil {
-		return errors.New("invalid RECEIVED-FROM length")
+		return fmt.Errorf("malformed RECEIVED-FROM: %w", err)
 	}
-	ngcpData.ReceiveFrom = receivedFrom[colonIdx+1 : colonIdx+1+receivedFromLen]
-	msg.SIP.RuriUser = receivedFrom[colonIdx+1 : colonIdx+1+receivedFromLen]
+	ngcpData.ReceiveFrom = val
+	msg.SIP.RuriUser = val
 	return nil
 }
 
@@ -414,46 +379,23 @@ func parseCookie(payload string, ngcpData *NGCPStruct, msg *Msg) error {
 }
 
 func parseCallID(payload string, ngcpData *NGCPStruct, msg *Msg) error {
-	if !strings.Contains(payload, "call-id") {
-		return errors.New("no CALL-ID found")
-	}
-
-	callID := strNstr(payload, "call-id", len(payload))
-	callID = callID[7:]
-	colonIdx := strings.Index(callID, ":")
-	if colonIdx == -1 {
-		log.Println("error in check NGCP: malformed CALL-ID")
-		return errors.New("malformed CALL-ID")
-	}
-	callIDLen, err := strconv.Atoi(callID[:colonIdx])
+	val, err := parseField(payload, "call-id", len("call-id"))
 	if err != nil {
-		return errors.New("invalid CALL-ID length")
+		return fmt.Errorf("no CALL-ID found: %w", err)
 	}
-	ngcpData.CallID = callID[colonIdx+1 : colonIdx+1+callIDLen]
-	msg.SIP.CallID = callID[colonIdx+1 : colonIdx+1+callIDLen]
+	ngcpData.CallID = val
+	msg.SIP.CallID = val
 
 	return nil
 }
 
 func parseSDP(payload string, ngcpData *NGCPStruct, msg *Msg) error {
-	if !strings.Contains(payload, "sdp") {
-		return errors.New("no SDP found")
-	}
-
-	sdp := strNstr(payload, "sdp", len(payload))
-	sdp = sdp[3:]
-	colonIdx := strings.Index(sdp, ":")
-	if colonIdx == -1 {
-		log.Println("error in check NGCP: malformed SDP")
-		return errors.New("malformed SDP")
-	}
-	sdpLen, err := strconv.Atoi(sdp[:colonIdx])
+	val, err := parseField(payload, "sdp", len("sdp"))
 	if err != nil {
-		log.Println("invalid SDP length")
-		return errors.New("invalid SDP length")
+		return fmt.Errorf("no SDP found: %w", err)
 	}
-	ngcpData.Sdp = sdp[colonIdx+1 : colonIdx+1+sdpLen]
-	msg.SIP.Body = sdp[colonIdx+1 : colonIdx+1+sdpLen]
+	ngcpData.Sdp = val
+	msg.SIP.Body = val
 
 	return nil
 }

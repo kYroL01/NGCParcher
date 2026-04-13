@@ -25,6 +25,7 @@ type SIP struct {
 	FromTag    string
 	HasFromTag bool
 	FromUser   string
+	ToUser     string
 	ToTag      string
 	HasToTag   bool
 	RuriUser   string
@@ -36,7 +37,7 @@ type SIP struct {
 
 // Msg struct to hold the parsed message
 type Msg struct {
-	NGCPType int // REQUEST, RESPONSE
-	NGCPComm int // OFFER, ANSWER, DELETE, PING
+	NGCPType NGCPMsgType // REQUEST, RESPONSE
+	NGCPComm NGCPCommand // OFFER, ANSWER, DELETE, OK
 	SIP      SIP
 }
