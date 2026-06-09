@@ -1,4 +1,3 @@
-[![release](https://img.shields.io/github/release/danieledesensi/peafowl.svg)](https://github.com/danieledesensi/peafowl/releases/latest)
 [![Generic badge](https://img.shields.io/badge/Go-blue.svg)](Go)
 [![Generic badge](https://img.shields.io/badge/NGCP-red.svg)](NGCP)
 
