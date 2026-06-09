@@ -6,5 +6,5 @@ require github.com/google/gopacket v1.1.19
 
 require (
 	github.com/spf13/pflag v1.0.5
-	golang.org/x/sys v0.0.0-20190412213103-97732733099d // indirect
+	golang.org/x/sys v0.0.0-20220412211240-33da011f77ad // indirect
 )
